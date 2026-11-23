@@ -1,20 +1,13 @@
 #include <SPI.h>
 #include <MFRC522.h>
+#include <AsyncTaskLib.h>
 
 const byte PIN_SELECCION = 53;
 const byte PIN_RESET = 5;
 
 MFRC522 lector(PIN_SELECCION, PIN_RESET);
 
-void setup() {
-  Serial.begin(9600);
-  SPI.begin();
-  lector.PCD_Init();
-
-  Serial.println("Lector RFID listo. Presenta una tarjeta.");
-}
-
-void loop() {
+void leerTarjeta() {
   if (!lector.PICC_IsNewCardPresent()) {
     return;
   }
@@ -39,4 +32,20 @@ void loop() {
 
   Serial.println();
   lector.PICC_HaltA();
+}
+
+// Cada 50 ms, ejecutar leerTarjeta y volver a programar la tarea.
+AsyncTask tareaRFID(50, true, leerTarjeta);
+
+void setup() {
+  Serial.begin(9600);
+  SPI.begin();
+  lector.PCD_Init();
+
+  tareaRFID.Start();
+  Serial.println("Tarea RFID iniciada. Presenta una tarjeta.");
+}
+
+void loop() {
+  tareaRFID.Update();
 }
