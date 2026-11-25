@@ -120,6 +120,46 @@ byte pinesColumnas[COLUMNAS] = {26, 27, 28, 29};
 
 Keypad teclado(makeKeymap(mapaTeclas), pinesFilas, pinesColumnas,
               FILAS, COLUMNAS);
+              
+//Leds, pines de acceso permitido o no
+
+const byte PIN_LED_VERDE = 30;
+const byte PIN_LED_ROJO = 31;
+const byte PIN_BUZZER = 8;
+const unsigned long DURACION_LED = 2000;
+
+bool senalActiva = false;
+unsigned long inicioSenal = 0;
+
+void indicarResultado(bool pinCorrecto) {
+  int frecuencia;
+
+  if (pinCorrecto) {
+    digitalWrite(PIN_LED_VERDE, HIGH);
+    digitalWrite(PIN_LED_ROJO, LOW);
+    frecuencia = 1500;
+  } else {
+    digitalWrite(PIN_LED_VERDE, LOW);
+    digitalWrite(PIN_LED_ROJO, HIGH);
+    frecuencia = 350;
+  }
+
+  tone(PIN_BUZZER, frecuencia, 300);
+  inicioSenal = millis();
+  senalActiva = true;
+}
+
+void apagarIndicadores() {
+  if (senalActiva && millis() - inicioSenal >= DURACION_LED) {
+    digitalWrite(PIN_LED_VERDE, LOW);
+    digitalWrite(PIN_LED_ROJO, LOW);
+    senalActiva = false;
+  }
+}
+
+AsyncTask tareaIndicadores(20, true, apagarIndicadores);
+
+
 
 void leerTeclado() {
   char tecla = teclado.getKey();
@@ -147,8 +187,10 @@ void leerTeclado() {
       Serial.print("PIN correcto para ");
       Serial.println(usuarioActual.nombre);
       esperandoPIN = false;
+      indicarResultado(true);
     } else {
       Serial.println("PIN incorrecto. Intenta de nuevo.");
+      indicarResultado(false);
     }
 
     digitosPIN = 0;
@@ -173,9 +215,15 @@ void setup() {
   tareaRFID.Start();
   tareaTeclado.Start();
   Serial.println("Presenta una tarjeta.");
+  pinMode(PIN_LED_VERDE, OUTPUT);
+  pinMode(PIN_LED_ROJO, OUTPUT);
+  pinMode(PIN_BUZZER, OUTPUT);
+
+tareaIndicadores.Start();
 }
 
 void loop() {
   tareaRFID.Update();
   tareaTeclado.Update();
+  tareaIndicadores.Update();
 }
