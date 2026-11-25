@@ -29,6 +29,12 @@ Usuario usuarioActual;
 bool esperandoPIN = false;
 char pinIngresado[5];
 byte digitosPIN = 0;
+const byte MAX_INTENTOS = 3;
+const unsigned long DURACION_BLOQUEO = 10000;
+
+byte intentosFallidos = 0;
+bool accesoBloqueado = false;
+unsigned long inicioBloqueo = 0;
 
 // La posición 0 guarda la marca. Los usuarios empiezan en la posición 1.
 int direccionUsuario(byte indice) {
@@ -81,6 +87,11 @@ void leerTarjeta() {
 
   if (!lector.PICC_ReadCardSerial()) {
     return;
+  }
+
+  if (accesoBloqueado) {
+  lector.PICC_HaltA();
+  return;
   }
 
   Serial.print("UID leido: ");
@@ -149,7 +160,29 @@ void indicarResultado(bool pinCorrecto) {
   senalActiva = true;
 }
 
+void activarBloqueo() {
+  accesoBloqueado = true;
+  inicioBloqueo = millis();
+  esperandoPIN = false;
+  senalActiva = false;
+
+  digitalWrite(PIN_LED_VERDE, LOW);
+  digitalWrite(PIN_LED_ROJO, HIGH);
+  tone(PIN_BUZZER, 350, 1000);
+  Serial.println("Acceso bloqueado por 10 segundos.");
+}
+
 void apagarIndicadores() {
+  if (accesoBloqueado) {
+    if (millis() - inicioBloqueo >= DURACION_BLOQUEO) {
+      digitalWrite(PIN_LED_ROJO, LOW);
+      accesoBloqueado = false;
+      intentosFallidos = 0;
+      Serial.println("Bloqueo terminado. Presenta una tarjeta.");
+    }
+    return;
+  }
+
   if (senalActiva && millis() - inicioSenal >= DURACION_LED) {
     digitalWrite(PIN_LED_VERDE, LOW);
     digitalWrite(PIN_LED_ROJO, LOW);
@@ -164,9 +197,9 @@ AsyncTask tareaIndicadores(20, true, apagarIndicadores);
 void leerTeclado() {
   char tecla = teclado.getKey();
 
-  if (tecla == NO_KEY || !esperandoPIN) {
-    return;
-  }
+  if (tecla == NO_KEY || accesoBloqueado || !esperandoPIN) {
+  return;
+}
 
   if (tecla == '*') {
     digitosPIN = 0;
@@ -179,19 +212,28 @@ void leerTeclado() {
       Serial.println("\nCompleta los 4 digitos.");
       return;
     }
-
+    
     pinIngresado[digitosPIN] = '\0';
     Serial.println();
-
+    
     if (strcmp(pinIngresado, usuarioActual.pin) == 0) {
-      Serial.print("PIN correcto para ");
-      Serial.println(usuarioActual.nombre);
-      esperandoPIN = false;
-      indicarResultado(true);
-    } else {
-      Serial.println("PIN incorrecto. Intenta de nuevo.");
-      indicarResultado(false);
-    }
+  intentosFallidos = 0;
+  Serial.print("PIN correcto para ");
+  Serial.println(usuarioActual.nombre);
+  esperandoPIN = false;
+  indicarResultado(true);
+} else {
+  intentosFallidos++;
+
+  if (intentosFallidos >= MAX_INTENTOS) {
+    activarBloqueo();
+  } else {
+    Serial.print("PIN incorrecto. Intento ");
+    Serial.print(intentosFallidos);
+    Serial.println(" de 3.");
+    indicarResultado(false);
+  }
+}
 
     digitosPIN = 0;
     return;
