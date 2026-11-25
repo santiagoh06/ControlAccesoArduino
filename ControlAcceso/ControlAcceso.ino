@@ -8,7 +8,7 @@
 const byte PIN_SELECCION = 53;
 const byte PIN_RESET = 5;
 const byte CANTIDAD_USUARIOS = 3;
-const byte MARCA_USUARIOS_V2 = 0xA2;
+const byte MARCA_USUARIOS_V3 = 0xA3;
 
 MFRC522 lector(PIN_SELECCION, PIN_RESET);
 
@@ -16,13 +16,19 @@ struct Usuario {
   byte uid[4];
   char nombre[12];
   char rol[12];
+  char pin[5];
 };
 
 const Usuario usuariosIniciales[CANTIDAD_USUARIOS] = {
-  {{0x01, 0x02, 0x03, 0x04}, "Steven",   "Operario"},
-  {{0x11, 0x22, 0x33, 0x44}, "Sergio",   "Coordinador"},
-  {{0x55, 0x66, 0x77, 0x88}, "Santiago", "Gerente"}
+  {{0x01, 0x02, 0x03, 0x04}, "Steven",   "Operario", "1234"},
+  {{0x11, 0x22, 0x33, 0x44}, "Sergio",   "Coordinador", "2468"},
+  {{0x55, 0x66, 0x77, 0x88}, "Santiago", "Gerente", "1357"}
 };
+
+Usuario usuarioActual;
+bool esperandoPIN = false;
+char pinIngresado[5];
+byte digitosPIN = 0;
 
 // La posición 0 guarda la marca. Los usuarios empiezan en la posición 1.
 int direccionUsuario(byte indice) {
@@ -30,7 +36,7 @@ int direccionUsuario(byte indice) {
 }
 
 void prepararEEPROM() {
-  if (EEPROM.read(0) == MARCA_USUARIOS_V2) {
+  if (EEPROM.read(0) == MARCA_USUARIOS_V3) {
     Serial.println("EEPROM: usuarios ya registrados.");
     return;
   }
@@ -39,22 +45,28 @@ void prepararEEPROM() {
     EEPROM.put(direccionUsuario(i), usuariosIniciales[i]);
   }
 
-  EEPROM.update(0, MARCA_USUARIOS_V2);
+  EEPROM.update(0, MARCA_USUARIOS_V3);
   Serial.println("EEPROM: se guardaron los tres usuarios.");
 }
 
 void mostrarUsuarioDeTarjeta() {
-  Usuario usuario;
+  esperandoPIN = false;
+  digitosPIN = 0;
 
+  Usuario usuario;
   for (byte i = 0; i < CANTIDAD_USUARIOS; i++) {
     EEPROM.get(direccionUsuario(i), usuario);
 
     if (lector.uid.size == sizeof(usuario.uid) &&
         memcmp(lector.uid.uidByte, usuario.uid, sizeof(usuario.uid)) == 0) {
+      usuarioActual = usuario;
+      esperandoPIN = true;
+
       Serial.print("Usuario reconocido: ");
-      Serial.print(usuario.nombre);
+      Serial.print(usuarioActual.nombre);
       Serial.print(" | ");
-      Serial.println(usuario.rol);
+      Serial.println(usuarioActual.rol);
+      Serial.println("Escribe tu PIN de 4 digitos y pulsa #.");
       return;
     }
   }
@@ -112,9 +124,41 @@ Keypad teclado(makeKeymap(mapaTeclas), pinesFilas, pinesColumnas,
 void leerTeclado() {
   char tecla = teclado.getKey();
 
-  if (tecla != NO_KEY) {
-    Serial.print("Tecla: ");
-    Serial.println(tecla);
+  if (tecla == NO_KEY || !esperandoPIN) {
+    return;
+  }
+
+  if (tecla == '*') {
+    digitosPIN = 0;
+    Serial.println("\nPIN borrado. Escribelo de nuevo.");
+    return;
+  }
+
+  if (tecla == '#') {
+    if (digitosPIN != 4) {
+      Serial.println("\nCompleta los 4 digitos.");
+      return;
+    }
+
+    pinIngresado[digitosPIN] = '\0';
+    Serial.println();
+
+    if (strcmp(pinIngresado, usuarioActual.pin) == 0) {
+      Serial.print("PIN correcto para ");
+      Serial.println(usuarioActual.nombre);
+      esperandoPIN = false;
+    } else {
+      Serial.println("PIN incorrecto. Intenta de nuevo.");
+    }
+
+    digitosPIN = 0;
+    return;
+  }
+
+  if (tecla >= '0' && tecla <= '9' && digitosPIN < 4) {
+    pinIngresado[digitosPIN] = tecla;
+    digitosPIN++;
+    Serial.print('*');
   }
 }
 
