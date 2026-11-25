@@ -2,6 +2,7 @@
 #include <MFRC522.h>
 #include <AsyncTaskLib.h>
 #include <EEPROM.h>
+#include <Keypad.h>
 #include <string.h>
 
 const byte PIN_SELECCION = 53;
@@ -91,6 +92,34 @@ void leerTarjeta() {
 
 AsyncTask tareaRFID(50, true, leerTarjeta);
 
+//Keypad
+const byte FILAS = 4;
+const byte COLUMNAS = 4;
+
+char mapaTeclas[FILAS][COLUMNAS] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
+};
+
+byte pinesFilas[FILAS] = {22, 23, 24, 25};
+byte pinesColumnas[COLUMNAS] = {26, 27, 28, 29};
+
+Keypad teclado(makeKeymap(mapaTeclas), pinesFilas, pinesColumnas,
+              FILAS, COLUMNAS);
+
+void leerTeclado() {
+  char tecla = teclado.getKey();
+
+  if (tecla != NO_KEY) {
+    Serial.print("Tecla: ");
+    Serial.println(tecla);
+  }
+}
+
+AsyncTask tareaTeclado(20, true, leerTeclado);
+
 void setup() {
   Serial.begin(9600);
   SPI.begin();
@@ -98,9 +127,11 @@ void setup() {
 
   prepararEEPROM();
   tareaRFID.Start();
+  tareaTeclado.Start();
   Serial.println("Presenta una tarjeta.");
 }
 
 void loop() {
   tareaRFID.Update();
+  tareaTeclado.Update();
 }
