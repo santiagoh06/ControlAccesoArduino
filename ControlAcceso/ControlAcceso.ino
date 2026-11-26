@@ -55,9 +55,52 @@ void prepararEEPROM() {
   Serial.println("EEPROM: se guardaron los tres usuarios.");
 }
 
+//horarios de entradas (OPERARIO, COORDINADOR O GERENTE)f
+const unsigned long DURACION_FRANJA = 20000; // 20 segundos para Wokwi
+
+const char rolesPorFranja[3][12] = {
+  "Operario",
+  "Coordinador",
+  "Gerente"
+};
+
+int franjaActual = 0;
+unsigned long inicioFranja = 0;
+
+void mostrarFranja() {
+  Serial.print("Rol habilitado: ");
+  Serial.println(rolesPorFranja[franjaActual]);
+}
+
+void actualizarHorario() {
+  unsigned long ahora = millis();
+  unsigned long tiempoPasado = ahora - inicioFranja;
+
+  if (tiempoPasado >= DURACION_FRANJA) {
+    inicioFranja = ahora;
+
+    if (franjaActual == 2) {
+      franjaActual = 0;
+    } else {
+      franjaActual = franjaActual + 1;
+    }
+
+    if (esperandoPIN) {
+      esperandoPIN = false;
+      digitosPIN = 0;
+      Serial.println("\nCambio de turno. Presenta una tarjeta.");
+    }
+
+    mostrarFranja();
+  }
+}
+
+AsyncTask tareaHorario(50, true, actualizarHorario);
+
 void mostrarUsuarioDeTarjeta() {
   esperandoPIN = false;
   digitosPIN = 0;
+  actualizarHorario();
 
   Usuario usuario;
   for (byte i = 0; i < CANTIDAD_USUARIOS; i++) {
@@ -65,6 +108,12 @@ void mostrarUsuarioDeTarjeta() {
 
     if (lector.uid.size == sizeof(usuario.uid) &&
         memcmp(lector.uid.uidByte, usuario.uid, sizeof(usuario.uid)) == 0) {
+   if (strcmp(usuario.rol, rolesPorFranja[franjaActual]) != 0) {
+  Serial.print("Fuera de turno para el rol ");
+  Serial.println(usuario.rol);
+  indicarResultado(false);
+  return;
+}
       usuarioActual = usuario;
       esperandoPIN = true;
 
@@ -207,7 +256,12 @@ void leerTeclado() {
     return;
   }
 
+ 
   if (tecla == '#') {
+       actualizarHorario();
+      if (!esperandoPIN) {
+        return;
+      }
     if (digitosPIN != 4) {
       Serial.println("\nCompleta los 4 digitos.");
       return;
@@ -262,9 +316,13 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
 
 tareaIndicadores.Start();
+inicioFranja = millis();
+mostrarFranja();
+tareaHorario.Start();
 }
 
 void loop() {
+  tareaHorario.Update();
   tareaRFID.Update();
   tareaTeclado.Update();
   tareaIndicadores.Update();
