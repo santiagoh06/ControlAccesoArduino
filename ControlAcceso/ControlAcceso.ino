@@ -4,6 +4,10 @@
 #include <EEPROM.h>
 #include <Keypad.h>
 #include <string.h>
+#include <LiquidCrystal.h>
+
+// Orden: RS, E, D4, D5, D6, D7
+LiquidCrystal lcd(32, 33, 34, 35, 36, 37);
 
 const byte PIN_SELECCION = 53;
 const byte PIN_RESET = 5;
@@ -67,9 +71,31 @@ const char rolesPorFranja[3][12] = {
 int franjaActual = 0;
 unsigned long inicioFranja = 0;
 
+
+void mostrarMensaje(const char linea1[], const char linea2[]) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(linea1);
+  lcd.setCursor(0, 1);
+  lcd.print(linea2);
+}
+
+void mostrarPantallaPIN() {
+  mostrarMensaje(usuarioActual.nombre, "Digite PIN: ");
+
+  for (byte i = 0; i < digitosPIN; i++) {
+    lcd.print('*');
+  }
+}
+
+
 void mostrarFranja() {
   Serial.print("Rol habilitado: ");
   Serial.println(rolesPorFranja[franjaActual]);
+
+  if (!accesoBloqueado) {
+    mostrarMensaje("Rol habilitado:", rolesPorFranja[franjaActual]);
+  }
 }
 
 void actualizarHorario() {
@@ -111,11 +137,13 @@ void mostrarUsuarioDeTarjeta() {
    if (strcmp(usuario.rol, rolesPorFranja[franjaActual]) != 0) {
   Serial.print("Fuera de turno para el rol ");
   Serial.println(usuario.rol);
+  mostrarMensaje("Fuera de turno", usuario.rol);
   indicarResultado(false);
   return;
 }
       usuarioActual = usuario;
       esperandoPIN = true;
+      mostrarPantallaPIN();
 
       Serial.print("Usuario reconocido: ");
       Serial.print(usuarioActual.nombre);
@@ -127,6 +155,8 @@ void mostrarUsuarioDeTarjeta() {
   }
 
   Serial.println("Tarjeta desconocida");
+  mostrarMensaje("Tarjeta", "desconocida");
+  indicarResultado(false);
 }
 
 void leerTarjeta() {
@@ -219,6 +249,7 @@ void activarBloqueo() {
   digitalWrite(PIN_LED_ROJO, HIGH);
   tone(PIN_BUZZER, 350, 1000);
   Serial.println("Acceso bloqueado por 10 segundos.");
+  mostrarMensaje("Acceso bloqueado", "Espere 10 s");
 }
 
 void apagarIndicadores() {
@@ -228,6 +259,7 @@ void apagarIndicadores() {
       accesoBloqueado = false;
       intentosFallidos = 0;
       Serial.println("Bloqueo terminado. Presenta una tarjeta.");
+      mostrarFranja();
     }
     return;
   }
@@ -236,6 +268,11 @@ void apagarIndicadores() {
     digitalWrite(PIN_LED_VERDE, LOW);
     digitalWrite(PIN_LED_ROJO, LOW);
     senalActiva = false;
+    if (esperandoPIN) {
+      mostrarPantallaPIN();
+    } else {
+      mostrarMensaje("Rol habilitado:", rolesPorFranja[franjaActual]);
+    }
   }
 }
 
@@ -252,6 +289,7 @@ void leerTeclado() {
 
   if (tecla == '*') {
     digitosPIN = 0;
+    mostrarPantallaPIN();
     Serial.println("\nPIN borrado. Escribelo de nuevo.");
     return;
   }
@@ -264,19 +302,22 @@ void leerTeclado() {
       }
     if (digitosPIN != 4) {
       Serial.println("\nCompleta los 4 digitos.");
+      mostrarMensaje("PIN incompleto", "Faltan digitos");
       return;
     }
     
     pinIngresado[digitosPIN] = '\0';
     Serial.println();
     
-    if (strcmp(pinIngresado, usuarioActual.pin) == 0) {
+  if (strcmp(pinIngresado, usuarioActual.pin) == 0) {
   intentosFallidos = 0;
   Serial.print("PIN correcto para ");
   Serial.println(usuarioActual.nombre);
   esperandoPIN = false;
+  //mensaje de acceso al sistema
+  mostrarMensaje("Bienvenido", usuarioActual.nombre);
   indicarResultado(true);
-} else {
+  } else {
   intentosFallidos++;
 
   if (intentosFallidos >= MAX_INTENTOS) {
@@ -285,6 +326,9 @@ void leerTeclado() {
     Serial.print("PIN incorrecto. Intento ");
     Serial.print(intentosFallidos);
     Serial.println(" de 3.");
+    mostrarMensaje("PIN incorrecto", "Intento ");
+    lcd.print(intentosFallidos);
+    lcd.print(" de 3");
     indicarResultado(false);
   }
 }
@@ -296,6 +340,7 @@ void leerTeclado() {
   if (tecla >= '0' && tecla <= '9' && digitosPIN < 4) {
     pinIngresado[digitosPIN] = tecla;
     digitosPIN++;
+    mostrarPantallaPIN();
     Serial.print('*');
   }
 }
@@ -316,6 +361,8 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
 
 tareaIndicadores.Start();
+lcd.begin(16, 2);
+
 inicioFranja = millis();
 mostrarFranja();
 tareaHorario.Start();
